@@ -30,7 +30,6 @@ PseudoTerminal *pts = NULL;
 
 void termination_handler(int signum)
 {
-    signum++;
     global_stop = 1;
 }
 
@@ -120,69 +119,10 @@ void *serial_output_thread(void *threadid)
     return threadid;
 }
 
-int main()
+char device_name[100] = "/dev/edvs_camera_debug";
+
+void* serial(void* ptr)
 {
-
-    // Setup right singal handling (allows to safely terminate applicaiton with Ctrl+C)
-    // ... as described in http://www.gnu.org/software/libc/manual/html_node/Sigaction-Function-Example.html
-    struct sigaction new_action; //, old_action;
-
-    new_action.sa_handler = termination_handler;
-    sigemptyset (&new_action.sa_mask);
-    new_action.sa_flags = 0;
-
-//    sigaction (SIGINT, NULL, &old_action);
-//    if (old_action.sa_handler != SIG_IGN)
-//    {
-//        sigaction (SIGINT, &new_action, NULL);
-//    }
-
-//    sigaction (SIGKILL, NULL, &old_action);
-//    if (old_action.sa_handler != SIG_IGN)
-//    {
-//        sigaction (SIGKILL, &new_action, NULL);
-//    }
-
-//    sigaction (SIGTERM, NULL, &old_action);
-//    if (old_action.sa_handler != SIG_IGN)
-//    {
-//        sigaction (SIGTERM, &new_action, NULL);
-//    }
-
-    // Open up pseudo terminal
-    try
-    {
-        pts = new PseudoTerminal();
-    }
-    catch (const std::exception &e)
-    {
-        cout << "Could not create pseudo terminal!" << endl;
-        return -1;
-    }
-
-    // Create symlink
-    string pts_path = pts->getPath();
-
-    unlink("/dev/edvs_camera_debug");
-
-    if (symlink(pts_path.c_str(), "/dev/edvs_camera_debug") < 0)
-    {
-        cout << "Could not create symlink!" << endl;
-        return -1;
-    }
-    else
-    {
-        cout << "Symlink created!" << endl;
-    }
-
-    // Open up serial output thread
-    pthread_t thread;
-
-    pthread_create(&thread, NULL, serial_output_thread, NULL);
-
-    // Debug output
-    cout << "PTS-Path: " << pts->getPath() << endl;
-
     // Read from pseudo terminal as long as stop condition is not fullfilled
     string input, command, ret_str;
 
@@ -221,7 +161,106 @@ int main()
         usleep(10000);
     }
 
-    unlink("/dev/edvs_camera_debug");
+    unlink(device_name);
+
+    return (void*) 0;
+}
+
+
+int main(int argc, char** argv)
+{
+    // Get command line options
+    int c;
+
+    while ((c = getopt(argc, argv, "vd:s:c:")) != -1)
+    {
+        switch (c)
+        {
+        case 'c':
+            sscanf(optarg, "%s", device_name);
+            printf("Device path: %s\n", (char*)device_name);
+            break;
+
+        default:
+            break;
+        }
+    }
+
+
+    // Setup right singal handling (allows to safely terminate applicaiton with Ctrl+C)
+    // ... as described in http://www.gnu.org/software/libc/manual/html_node/Sigaction-Function-Example.html
+//    struct sigaction new_action, old_action;
+
+//    new_action.sa_handler = termination_handler;
+//    sigemptyset (&new_action.sa_mask);
+//    new_action.sa_flags = 0;
+
+//    sigaction (SIGINT, NULL, &old_action);
+//    if (old_action.sa_handler != SIG_IGN)
+//    {
+//        sigaction (SIGINT, &new_action, NULL);
+//    }
+
+//    sigaction (SIGKILL, NULL, &old_action);
+//    if (old_action.sa_handler != SIG_IGN)
+//    {
+//        sigaction (SIGKILL, &new_action, NULL);
+//    }
+
+//    sigaction (SIGTERM, NULL, &old_action);
+//    if (old_action.sa_handler != SIG_IGN)
+//    {
+//        sigaction (SIGTERM, &new_action, NULL);
+//    }
+
+    // Open up pseudo terminal
+    try
+    {
+        pts = new PseudoTerminal();
+    }
+    catch (const std::exception &e)
+    {
+        cout << "Could not create pseudo terminal!" << endl;
+        return -1;
+    }
+
+    // Create symlink
+    string pts_path = pts->getPath();
+
+    unlink(device_name);
+
+    if (symlink(pts_path.c_str(), device_name) < 0)
+    {
+        cout << "Could not create symlink!" << endl;
+        //return -1;
+    }
+    else
+    {
+        printf("Symlink %s created!\n", (char*)device_name);
+    }
+
+    // Open up serial output thread
+    pthread_t thread, thread2;
+
+    pthread_create(&thread, NULL, serial_output_thread, NULL);
+    pthread_create(&thread2, NULL, serial, NULL);
+
+    // Debug output
+    cout << "PTS-Path: " << pts->getPath() << endl;
+
+
+    char  a;
+
+    while(global_stop == 0)
+    {
+        cin >> a;
+
+        if (a == 'q')
+        {
+             global_stop = 1;
+        }
+    }
+
     return 0;
 }
 
