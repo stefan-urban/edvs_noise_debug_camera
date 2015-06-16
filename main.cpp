@@ -86,7 +86,7 @@ void *serial_output_thread(void *threadid)
 
     while (stop == 0 && global_stop == 0)
     {
-        usleep(1000);
+        usleep(100);
 
         // Output only works if terminal is available
         if (pts == NULL)
@@ -172,7 +172,7 @@ int main(int argc, char** argv)
     // Get command line options
     int c;
 
-    while ((c = getopt(argc, argv, "vd:s:c:")) != -1)
+    while ((c = getopt(argc, argv, "c:")) != -1)
     {
         switch (c)
         {
@@ -259,6 +259,8 @@ int main(int argc, char** argv)
         {
              global_stop = 1;
         }
+
+        usleep(100000);
     }
 
     return 0;
