@@ -31,6 +31,10 @@ const string helptext =
 int global_stop = 0;
 int stop = 0;
 
+int quiet = 0;
+
+char device_name[100] = "/dev/edvs_camera_debug";
+
 int enable_serial_data = 0;
 
 PseudoTerminal *pts = NULL;
@@ -52,7 +56,7 @@ string serial_interface(string command)
         return out;
     }
 
-    printf("Command: %s\n", command.c_str());
+    printf("%s | Command: %s\n", device_name, command.c_str());
 
     // Various commands
     if (command == "??")
@@ -77,12 +81,15 @@ string serial_interface(string command)
     }
     else
     {
-        out = string("Command not found!");
+        char buf[100];
+        sprintf(buf, "%s | ", device_name);
+
+        out = string(buf);
+        out += string("Command not found!");
     }
 
     // Append command line
-    out = "\r" + out;
-    out += "\n\r> ";
+    out = "\r" + out + "\n";
 
     return out;
 }
@@ -186,44 +193,27 @@ void *serial_output_thread(void *threadid)
     read_events(filename);
 
 
-    // Start time
-    struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    uint64_t start_time = 1000000ull*(uint64_t)(t.tv_sec) + (uint64_t)(t.tv_nsec)/1000ull;
-
-    // First timestamp in file
+    // First timestamp in file in us
     uint64_t first_timestamp = events.front().time;
-
-
+    uint64_t time_step = 10 * 1000; // 10 ms
 
     int byte1, byte2;
     string send_str = "";
     int current = 0;
+    int time_diff = 0;
 
     while (stop == 0 && global_stop == 0)
     {
-        usleep(1000); continue;
-
         // Output only works if terminal is available
         if (pts == NULL)
         {
             continue;
         }
 
-        // Run only if requested
-        if (enable_serial_data == 0)
-        {
-            continue;
-        }
+        // in: events[]
 
+        time_diff = time_diff + time_step;
 
-        // Calc current time
-        struct timespec t;
-        clock_gettime(CLOCK_MONOTONIC, &t);
-        uint64_t current_time = 1000000ull*(uint64_t)(t.tv_sec) + (uint64_t)(t.tv_nsec)/1000ull;
-        uint64_t time_diff = current_time - start_time;
-
-        // Display all events to current time
         while (events[current].time < (first_timestamp + time_diff))
         {
             byte1 = events[current].x;
@@ -236,40 +226,29 @@ void *serial_output_thread(void *threadid)
             send_str += byte1;
             send_str += byte2;
 
-            printf("Send: %s\n", send_str.c_str());
+            if (enable_serial_data)
+            {
+                //printf("Send: %s\n", send_str.c_str());
+                pts->writeLine(send_str);
+            }
 
-            pts->writeLine(send_str);
-
-
-            // Iterator
             current++;
 
-            if (current == (events.size() - 1))
+            if (current >= events.size() - 1)
             {
                 current = 0;
+                time_diff = 0;
+                break;
             }
         }
 
-//        // Generator two random coordinates
-//        byte1 = rand() % 128;
-//        byte2 = rand() % 128;
+        usleep(time_step);
 
-//        byte1 |= 0x80;
-//        byte2 |= (rand() % 2) << 7;
 
-        send_str.clear();
-        send_str += byte1;
-        send_str += byte2;
-
-        printf("Send: %s\n", send_str.c_str());
-
-        pts->writeLine(send_str);
     }
 
     return threadid;
 }
-
-char device_name[100] = "/dev/edvs_camera_debug";
 
 void* serial(void* ptr)
 {
@@ -321,18 +300,24 @@ int main(int argc, char** argv)
     // Get command line options
     int c;
 
-    while ((c = getopt(argc, argv, "c:i:")) != -1)
+    while ((c = getopt(argc, argv, "qc:i:")) != -1)
     {
         switch (c)
         {
         case 'c':
             sscanf(optarg, "%s", device_name);
-            printf("Device path: %s\n", (char*)device_name);
+            if (quiet == 0)
+                printf("Device path: %s\n", (char*)device_name);
             break;
 
         case 'i':
             sscanf(optarg, "%d", &file_id);
-            printf("Filename: data_%d.dvs\n", file_id);
+            if (quiet == 0)
+                printf("Filename: data_%d.dvs\n", file_id);
+            break;
+
+        case 'q':
+            quiet = 1;
             break;
 
         default:
@@ -374,7 +359,8 @@ int main(int argc, char** argv)
     }
     catch (const std::exception &e)
     {
-        cout << "Could not create pseudo terminal!" << endl;
+        if (quiet == 0)
+            cout << "Could not create pseudo terminal!" << endl;
         return -1;
     }
 
@@ -385,12 +371,14 @@ int main(int argc, char** argv)
 
     if (symlink(pts_path.c_str(), device_name) < 0)
     {
-        cout << "Could not create symlink!" << endl;
+        if (quiet == 0)
+            cout << "Could not create symlink!" << endl;
         //return -1;
     }
     else
     {
-        printf("Symlink %s created!\n", (char*)device_name);
+        if (quiet == 0)
+            printf("Symlink %s created!\n", (char*)device_name);
     }
 
     // Open up serial output thread
@@ -400,7 +388,8 @@ int main(int argc, char** argv)
     pthread_create(&thread2, NULL, serial, NULL);
 
     // Debug output
-    cout << "PTS-Path: " << pts->getPath() << endl;
+    if (quiet == 0)
+        cout << "PTS-Path: " << pts->getPath() << endl;
 
 
     char  a;
